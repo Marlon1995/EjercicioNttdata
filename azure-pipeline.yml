@@ -44,23 +44,11 @@ jobs:
           $(IMAGE_TAG)
       displayName: 'Build Docker Image'
 
-    # Paso para verificar que la imagen se construyó correctamente
-    - script: |
-        docker images
-      displayName: 'List Docker Images'
-
-    # Paso para autenticar con Azure Container Registry
-    - task: Docker@2
-      inputs:
-        command: login
-        containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
-      displayName: 'Login to Azure Container Registry'
-
     # Paso para empujar la imagen a ACR
     - task: Docker@2
       inputs:
         command: push
-        repository: $(IMAGE_NAME)
+        repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
         tags: |
           $(IMAGE_TAG)
         containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
