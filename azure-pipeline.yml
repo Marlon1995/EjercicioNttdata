@@ -38,7 +38,7 @@ jobs:
     - task: Docker@2
       inputs:
         command: build
-        repository: $(IMAGE_NAME)
+        repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
         Dockerfile: 'Dockerfile'
         tags: |
           $(IMAGE_TAG)
