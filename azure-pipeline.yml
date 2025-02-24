@@ -16,93 +16,61 @@ variables:
   # Imagen Tag default (se configurará según la rama en los pasos)
   IMAGE_TAG: 'latest'  # Default value, se sobrescribirá en los pasos
 
-stages:
-- stage: Build
-  displayName: 'Build Docker Image'
-  jobs:
-    - job: Build
+jobs:
+- job: BuildAndDeploy
+  displayName: 'Build, Push and Deploy Docker Image'
+  steps:
+
+    # Paso para establecer el valor de IMAGE_TAG basado en la rama
+    - script: |
+        if [ "$(Build.SourceBranchName)" == "master" ]; then
+          echo "##vso[task.setvariable variable=IMAGE_TAG]latest"
+        elif [ "$(Build.SourceBranchName)" == "qa" ]; then
+          echo "##vso[task.setvariable variable=IMAGE_TAG]qa"
+        elif [ "$(Build.SourceBranchName)" == "dev" ]; then
+          echo "##vso[task.setvariable variable=IMAGE_TAG]dev"
+        fi
+      displayName: 'Set IMAGE_TAG based on branch'
+
+    # Paso para construir la imagen Docker
+    - task: Docker@2
+      inputs:
+        command: build
+        repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+        Dockerfile: 'Dockerfile'
+        tags: |
+          $(IMAGE_TAG)
       displayName: 'Build Docker Image'
-      steps:
-        - script: |
-            if [ "$(Build.SourceBranchName)" == "master" ]; then
-              echo "##vso[task.setvariable variable=IMAGE_TAG]latest"
-            elif [ "$(Build.SourceBranchName)" == "qa" ]; then
-              echo "##vso[task.setvariable variable=IMAGE_TAG]qa"
-            elif [ "$(Build.SourceBranchName)" == "dev" ]; then
-              echo "##vso[task.setvariable variable=IMAGE_TAG]dev"
-            fi
-          displayName: 'Set IMAGE_TAG based on branch'
 
-        - task: Docker@2
-          inputs:
-            command: build
-            repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
-            Dockerfile: 'Dockerfile'
-            tags: |
-              $(IMAGE_TAG)
-          displayName: 'Build Docker Image'
-           # Verificar que la imagen se construyó correctamente
-        - script: |
-            docker images
-          displayName: 'List Docker Images'
+    # Paso para verificar que la imagen se construyó correctamente
+    - script: |
+        docker images
+      displayName: 'List Docker Images'
 
-- stage: Push
-  displayName: 'Push Docker Image to ACR'
-  jobs:
-    - job: Push
-      displayName: 'Push Image to ACR'
-      steps:
-        - task: Docker@2
-          inputs:
-            command: push
-            repository: '$(AZURE_REGISTRY_URL)/$(IMAGE_NAME)'
-            tags: |
-              $(IMAGE_TAG)
-            containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
-          displayName: 'Push image to ACR'
+    # Paso para autenticar con Azure Container Registry
+    - task: Docker@2
+      inputs:
+        command: login
+        containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+      displayName: 'Login to Azure Container Registry'
 
-- stage: DeployToEnvironment
-  displayName: 'Deploy to Environment'
-  dependsOn: Push
-  jobs:
-    - job: Deploy
-      displayName: 'Deploy to Environment'
-      steps:
-        - ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
-            - task: Kubernetes@1
-              inputs:
-                connectionType: 'Kubernetes Service Connection'
-                kubernetesServiceEndpoint: 'aks-cluster-kfc'
-                namespace: $(NAMESPACE)
-                command: 'set'
-                arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
-                secretType: 'dockerRegistry'
-                containerRegistryType: 'Azure Container Registry'
-                containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
-              displayName: 'Update Kubernetes Deployment (Prod)'
+    # Paso para empujar la imagen a ACR
+    - task: Docker@2
+      inputs:
+        command: push
+        repository: '$(AZURE_REGISTRY_URL)/$(IMAGE_NAME)'
+        tags: |
+          $(IMAGE_TAG)
+        containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+      displayName: 'Push image to ACR'
 
-        - ${{ if eq(variables['Build.SourceBranchName'], 'qa') }}:
-            - task: Kubernetes@1
-              inputs:
-                connectionType: 'Kubernetes Service Connection'
-                kubernetesServiceEndpoint: 'aks-cluster-kfc'
-                namespace: $(NAMESPACE)
-                command: 'set'
-                arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
-                secretType: 'dockerRegistry'
-                containerRegistryType: 'Azure Container Registry'
-                containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
-              displayName: 'Update Kubernetes Deployment (QA)'
-
-        - ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
-            - task: Kubernetes@1
-              inputs:
-                connectionType: 'Kubernetes Service Connection'
-                kubernetesServiceEndpoint: 'aks-cluster-kfc'
-                namespace: $(NAMESPACE)
-                command: 'set'
-                arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
-                secretType: 'dockerRegistry'
-                containerRegistryType: 'Azure Container Registry'
-                containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
-              displayName: 'Update Kubernetes Deployment (Dev)'
+    # Paso para realizar el despliegue en función de la rama
+    - script: |
+        if [ "$(Build.SourceBranchName)" == "master" ]; then
+          kubectl set image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) --namespace=$(NAMESPACE)
+        elif [ "$(Build.SourceBranchName)" == "qa" ]; then
+          kubectl set image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) --namespace=$(NAMESPACE)
+        elif [ "$(Build.SourceBranchName)" == "dev" ]; then
+          kubectl set image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) --namespace=$(NAMESPACE)
+        fi
+      displayName: 'Update Kubernetes Deployment'
