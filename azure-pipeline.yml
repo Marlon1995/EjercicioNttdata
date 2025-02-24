@@ -10,8 +10,7 @@ variables:
   IMAGE_NAME: 'devops-microservice'
   AZURE_REGISTRY_URL: 'kfcregistry.azurecr.io'
   IMAGE_TAG: 'latest'  # Default value, se sobrescribirá en los pasos
-  LOGIN_NAME: 'kfcregistry'
-  LOGIN_PASSWORD: '$(KeyAzure)'
+
 
 jobs:
 - job: BuildAndDeploy
@@ -45,9 +44,6 @@ jobs:
           $(IMAGE_TAG)
       displayName: 'Build Docker Image'
       
-    - script: | 
-        echo $(AZURE_REGISTRY_PASSWORD) | docker login $(AZURE_REGISTRY_URL) -u $(AZURE_REGISTRY_USERNAME) --password-stdin
-      displayName: 'Docker login'
 
     # Paso para empujar la imagen a ACR (especificando el directorio de trabajo si es necesario)
     - task: Docker@2
