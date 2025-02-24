@@ -40,21 +40,19 @@ jobs:
     - task: Docker@2
       inputs:
         command: build
-        repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+        repository: kfcregistry.azurecr.io/$(IMAGE_NAME)
         Dockerfile: 'Dockerfile'  # Asegúrate de que tu Dockerfile esté en la raíz del repositorio o ajusta la ruta
         tags: |
           $(IMAGE_TAG)
       displayName: 'Build Docker Image'
       
-    - script: | 
-        echo $(AZURE_REGISTRY_PASSWORD) | docker login $(AZURE_REGISTRY_URL) -u $(AZURE_REGISTRY_USERNAME) --password-stdin
-      displayName: 'Docker login'
+  
 
     # Paso para empujar la imagen a ACR (especificando el directorio de trabajo si es necesario)
     - task: Docker@2
       inputs:
         command: push
-        repository: $(IMAGE_NAME)
+        repository: kfcregistry.azurecr.io/$(IMAGE_NAME)
         tags: |
           $(IMAGE_TAG)
         containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
@@ -62,5 +60,5 @@ jobs:
 
     # Paso para realizar el despliegue en función de la rama
     - script: |
-        kubectl set image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) --namespace=devops-microservice
+        kubectl set image deployment/$(DEPLOY) $(CONTAINER)=kfcregistry.azurecr.io/$(IMAGE_NAME):$(IMAGE_TAG) --namespace=devops-microservice
       displayName: 'Update Kubernetes Deployment'
