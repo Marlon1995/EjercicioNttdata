@@ -1,64 +1,70 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
 trigger:
 - master
-- qa
-- dev
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: ubuntu-latest
 
 variables:
-  IMAGE_NAME: 'devops-microservice'
-  AZURE_REGISTRY_URL: 'kfcregistry.azurecr.io'
-  IMAGE_TAG: 'latest'  # Default value, se sobrescribirá en los pasos
-  AZURE_REGISTRY_USERNAME: 'kfcregistry'
-  AZURE_REGISTRY_PASSWORD: '$(KEYAZURE)'
+#VARIABLES OF LIBRARY
+- group: KeyDecryptProd
+#VARIABLES GLOBAL FOR DEPLOY
+- name: 'AZURE_REGISTRY_URL'
+  value: 'kfcregistry.azurecr.io'
+- name: 'AZURE_REGISTRY_USERNAME'
+  value: 'kfcregistry'
+- name: 'AZURE_REGISTRY_PASSWORD'
+  value: '$(KeyAzure)'
+- name: 'IMAGE_NAME'
+  value: 'devops-microservice'
+- name: 'IMAGE_TAG'
+  value: 'latest'
+- name: 'NAMESPACE'
+  value: 'devops-microservice'
+- name: 'CONTAINER'
+  value: 'devops-microservice'
+- name: 'DEPLOY'
+  value: 'devops-microservice'
+- name: 'BUILD_ARG'
+  value: 'prod.devops'
+- name: 'SERVICE_AKS'
+  value: 'aks-cluster-kfc'
 
+steps:
+- task: Docker@2
+  inputs:
+    command: build
+    repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+    Dockerfile: '**/Dockerfile'
+    tags: |
+      $(IMAGE_TAG)
+    buildContext: '.'
+    arguments: |
+      --build-arg argument=$(BUILD_ARG)
+  displayName: 'Build Docker Image'
 
-jobs:
-- job: BuildAndDeploy
-  displayName: 'Build, Push and Deploy Docker Image'
-  steps:
+- script: |
+    echo $(AZURE_REGISTRY_PASSWORD) | docker login $(AZURE_REGISTRY_URL) -u $(AZURE_REGISTRY_USERNAME) --password-stdin
+  displayName: 'Docker login'
 
-    # Paso para establecer el valor de IMAGE_TAG basado en la rama
-    - script: |
-        if [ "$(Build.SourceBranchName)" == "master" ]; then
-          echo "##vso[task.setvariable variable=IMAGE_TAG]latest"
-          echo "##vso[task.setvariable variable=DEPLOY]devops-microservice"
-          echo "##vso[task.setvariable variable=CONTAINER]devops-microservice"
-        elif [ "$(Build.SourceBranchName)" == "qa" ]; then
-          echo "##vso[task.setvariable variable=IMAGE_TAG]qa"
-          echo "##vso[task.setvariable variable=DEPLOY]qa-devops-microservice"
-          echo "##vso[task.setvariable variable=CONTAINER]qa-devops-microservice"
-        elif [ "$(Build.SourceBranchName)" == "dev" ]; then
-          echo "##vso[task.setvariable variable=IMAGE_TAG]dev"
-          echo "##vso[task.setvariable variable=DEPLOY]dev-devops-microservice"
-          echo "##vso[task.setvariable variable=CONTAINER]dev-devops-microservice"
-        fi
-      displayName: 'Set IMAGE_TAG, DEPLOY, and CONTAINER based on branch'
+- task: Docker@2
+  inputs:
+    command: push
+    repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+    tags: |
+      $(IMAGE_TAG)
+  displayName: 'Push image to ACR'
 
-    # Paso para construir la imagen Docker (especificando el directorio de trabajo)
-    - task: Docker@2
-      inputs:
-        command: build
-        repository: kfcregistry.azurecr.io/$(IMAGE_NAME)
-        Dockerfile: 'Dockerfile'  # Asegúrate de que tu Dockerfile esté en la raíz del repositorio o ajusta la ruta
-        tags: |
-          $(IMAGE_TAG)
-      displayName: 'Build Docker Image'
-      
-  
-
-    # Paso para empujar la imagen a ACR (especificando el directorio de trabajo si es necesario)
-    - task: Docker@2
-      inputs:
-        command: push
-        repository: kfcregistry.azurecr.io/$(IMAGE_NAME)
-        tags: |
-          $(IMAGE_TAG)
-        containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
-      displayName: 'Push image to ACR'
-
-    # Paso para realizar el despliegue en función de la rama
-    - script: |
-        kubectl set image deployment/$(DEPLOY) $(CONTAINER)=kfcregistry.azurecr.io/$(IMAGE_NAME):$(IMAGE_TAG) --namespace=devops-microservice
-      displayName: 'Update Kubernetes Deployment'
+- task: Kubernetes@1
+  inputs:
+    connectionType: 'Kubernetes Service Connection'
+    kubernetesServiceEndpoint: $(SERVICE_AKS)
+    namespace: $(NAMESPACE)
+    command: 'set'
+    arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
+    secretType: 'dockerRegistry'
+    containerRegistryType: 'Azure Container Registry'
