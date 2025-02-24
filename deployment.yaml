@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: qa-devops-microservice
-        image: kfcregistry.azurecr.io/qa-devops-microservice:latest
+        image: kfcregistry.azurecr.io/devops-microservice:qa
         ports:
         - containerPort: 8080
         resources:
