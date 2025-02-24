@@ -41,6 +41,10 @@ stages:
             tags: |
               $(IMAGE_TAG)
           displayName: 'Build Docker Image'
+           # Verificar que la imagen se construyó correctamente
+        - script: |
+            docker images
+          displayName: 'List Docker Images'
 
 - stage: Push
   displayName: 'Push Docker Image to ACR'
