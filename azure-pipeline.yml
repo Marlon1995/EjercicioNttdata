@@ -44,53 +44,32 @@ stages:
             flake8 . || true  # La parte || true asegura que el paso no falle aunque haya errores
           displayName: 'Run flake8'
 
-# Etapa 2 - Build Docker Image
-- stage: BuildStage
-  displayName: 'Build Docker Image'
+# Etapa 2 - Build y Push Docker Image
+- stage: BuildAndPushStage
+  displayName: 'Build and Push Docker Image'
   jobs:
-    - job: Build
-      displayName: 'Build Docker Image'
-      pool:
-        vmImage: ubuntu-latest
-      steps:
-        - task: Docker@2
-          inputs:
-            command: build
-            repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
-            Dockerfile: '**/Dockerfile'
-            tags: |
-              $(IMAGE_TAG)
-            buildContext: '.'
-            arguments: |
-              --build-arg argument=$(BUILD_ARG)
-          displayName: 'Build Docker Image'
-
-# Etapa 3 - Login y Push de Docker
-- stage: PushStage
-  displayName: 'Login and Push Docker Image'
-  dependsOn: BuildStage
-  jobs:
-    - job: DockerLoginPush
-      displayName: 'Docker Login and Push'
+    - job: BuildAndPush
+      displayName: 'Build and Push Docker Image'
       pool:
         vmImage: ubuntu-latest
       steps:
         - script: |
+            echo "Building Docker image..."
+            docker build -t $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) --build-arg argument=$(BUILD_ARG) .
+          displayName: 'Build Docker Image'
+
+        - script: |
             echo $(AZURE_REGISTRY_PASSWORD) | docker login $(AZURE_REGISTRY_URL) -u $(AZURE_REGISTRY_USERNAME) --password-stdin
           displayName: 'Docker Login'
-          
-        - task: Docker@2
-          inputs:
-            command: push
-            repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
-            tags: |
-              $(IMAGE_TAG)
-          displayName: 'Push image to ACR'
 
-# Etapa 4 - Ejecutar pruebas unitarias
+        - script: |
+            docker push $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)
+          displayName: 'Push Docker Image to ACR'
+
+# Etapa 3 - Ejecutar pruebas unitarias
 - stage: TestStage
   displayName: 'Run Unit Tests'
-  dependsOn: PushStage
+  dependsOn: BuildAndPushStage
   jobs:
     - job: RunTests
       displayName: 'Run Unit Tests'
@@ -102,7 +81,7 @@ stages:
             docker run --rm $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) npm run test  # Asumiendo que las pruebas son con npm
           displayName: 'Run Unit Tests'
 
-# Etapa 5 - Despliegue en AKS
+# Etapa 4 - Despliegue en AKS
 - stage: DeployStage
   displayName: 'Deploy to AKS'
   dependsOn: TestStage
