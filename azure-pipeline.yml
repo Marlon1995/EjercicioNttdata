@@ -1,70 +1,122 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
 - master
+- dev
+- qa
 
 pool:
   vmImage: ubuntu-latest
 
 variables:
-#VARIABLES OF LIBRARY
-- group: KeyDecryptProd
-#VARIABLES GLOBAL FOR DEPLOY
-- name: 'AZURE_REGISTRY_URL'
-  value: 'kfcregistry.azurecr.io'
-- name: 'AZURE_REGISTRY_USERNAME'
-  value: 'kfcregistry'
-- name: 'AZURE_REGISTRY_PASSWORD'
-  value: '$(KeyAzure)'
-- name: 'IMAGE_NAME'
-  value: 'devops-microservice'
-- name: 'IMAGE_TAG'
-  value: 'latest'
-- name: 'NAMESPACE'
-  value: 'devops-microservice'
-- name: 'CONTAINER'
-  value: 'devops-microservice'
-- name: 'DEPLOY'
-  value: 'devops-microservice'
-- name: 'BUILD_ARG'
-  value: 'prod.devops'
-- name: 'SERVICE_AKS'
-  value: 'aks-cluster-kfc'
+  # Variables globales
+  - group: KeyDecryptProd
+  - name: 'AZURE_REGISTRY_URL'
+    value: 'kfcregistry.azurecr.io'
+  - name: 'AZURE_REGISTRY_USERNAME'
+    value: 'kfcregistry'
+  - name: 'AZURE_REGISTRY_PASSWORD'
+    value: '$(KeyAzure)'
+  - name: 'IMAGE_NAME'
+    value: 'devops-microservice'
+  - name: 'NAMESPACE'
+    value: 'devops-microservice'
+  - name: 'CONTAINER'
+    value: 'devops-microservice'
+  - name: 'DEPLOY'
+    value: 'devops-microservice'
+  - name: 'BUILD_ARG'
+    value: 'prod.devops'
+  - name: 'SERVICE_AKS'
+    value: 'aks-cluster-kfc'
 
-steps:
-- task: Docker@2
-  inputs:
-    command: build
-    repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
-    Dockerfile: '**/Dockerfile'
-    tags: |
-      $(IMAGE_TAG)
-    buildContext: '.'
-    arguments: |
-      --build-arg argument=$(BUILD_ARG)
+# Determinar la etiqueta de la imagen en función de la rama
+  - name: 'IMAGE_TAG'
+    value: $[coalesce(variables['Build.SourceBranchName'], 'latest')]
+
+# Asignación de IMAGE_TAG específica según la rama
+  - name: 'IMAGE_TAG'
+    value: $[ 
+        eq(variables['Build.SourceBranchName'], 'master') 
+        ? 'latest' 
+        : variables['Build.SourceBranchName']
+    ]
+
+stages:
+
+# Etapa 1 - Build Docker Image
+- stage: BuildStage
   displayName: 'Build Docker Image'
+  jobs:
+    - job: Build
+      displayName: 'Build Docker Image'
+      pool:
+        vmImage: ubuntu-latest
+      steps:
+        - task: Docker@2
+          inputs:
+            command: build
+            repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+            Dockerfile: '**/Dockerfile'
+            tags: |
+              $(IMAGE_TAG)
+            buildContext: '.'
+            arguments: |
+              --build-arg argument=$(BUILD_ARG)
+          displayName: 'Build Docker Image'
 
-- script: |
-    echo $(AZURE_REGISTRY_PASSWORD) | docker login $(AZURE_REGISTRY_URL) -u $(AZURE_REGISTRY_USERNAME) --password-stdin
-  displayName: 'Docker login'
+# Etapa 2 - Login y Push de Docker
+- stage: PushStage
+  displayName: 'Login and Push Docker Image'
+  dependsOn: BuildStage
+  jobs:
+    - job: DockerLoginPush
+      displayName: 'Docker Login and Push'
+      pool:
+        vmImage: ubuntu-latest
+      steps:
+        - script: |
+            echo $(AZURE_REGISTRY_PASSWORD) | docker login $(AZURE_REGISTRY_URL) -u $(AZURE_REGISTRY_USERNAME) --password-stdin
+          displayName: 'Docker Login'
+          
+        - task: Docker@2
+          inputs:
+            command: push
+            repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+            tags: |
+              $(IMAGE_TAG)
+          displayName: 'Push image to ACR'
 
-- task: Docker@2
-  inputs:
-    command: push
-    repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
-    tags: |
-      $(IMAGE_TAG)
-  displayName: 'Push image to ACR'
+# Etapa 3 - Ejecutar pruebas
+- stage: TestStage
+  displayName: 'Run Tests'
+  dependsOn: PushStage
+  jobs:
+    - job: RunTests
+      displayName: 'Run Tests'
+      pool:
+        vmImage: ubuntu-latest
+      steps:
+        - script: |
+            echo "Running tests on Docker image..."
+            docker run --rm $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) test-script.sh
+          displayName: 'Run Test Script'
 
-- task: Kubernetes@1
-  inputs:
-    connectionType: 'Kubernetes Service Connection'
-    kubernetesServiceEndpoint: $(SERVICE_AKS)
-    namespace: $(NAMESPACE)
-    command: 'set'
-    arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
-    secretType: 'dockerRegistry'
-    containerRegistryType: 'Azure Container Registry'
+# Etapa 4 - Despliegue en AKS
+- stage: DeployStage
+  displayName: 'Deploy to AKS'
+  dependsOn: TestStage
+  jobs:
+    - job: DeployToAKS
+      displayName: 'Deploy to AKS'
+      pool:
+        vmImage: ubuntu-latest
+      steps:
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Kubernetes Service Connection'
+            kubernetesServiceEndpoint: $(SERVICE_AKS)
+            namespace: $(NAMESPACE)
+            command: 'set'
+            arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
+            secretType: 'dockerRegistry'
+            containerRegistryType: 'Azure Container Registry'
+          displayName: 'Set New Image in AKS Deployment'
