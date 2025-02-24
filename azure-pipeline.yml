@@ -21,16 +21,16 @@ jobs:
     - script: |
         if [ "$(Build.SourceBranchName)" == "master" ]; then
           echo "##vso[task.setvariable variable=IMAGE_TAG]latest"
-          echo "##vso[task.setvariable variable=DEPLOY]production-deployment"
-          echo "##vso[task.setvariable variable=CONTAINER]production-container"
+          echo "##vso[task.setvariable variable=DEPLOY]devops-microservice"
+          echo "##vso[task.setvariable variable=CONTAINER]devops-microservice"
         elif [ "$(Build.SourceBranchName)" == "qa" ]; then
           echo "##vso[task.setvariable variable=IMAGE_TAG]qa"
-          echo "##vso[task.setvariable variable=DEPLOY]qa-deployment"
-          echo "##vso[task.setvariable variable=CONTAINER]qa-container"
+          echo "##vso[task.setvariable variable=DEPLOY]qa-devops-microservice"
+          echo "##vso[task.setvariable variable=CONTAINER]qa-devops-microservice"
         elif [ "$(Build.SourceBranchName)" == "dev" ]; then
           echo "##vso[task.setvariable variable=IMAGE_TAG]dev"
-          echo "##vso[task.setvariable variable=DEPLOY]dev-deployment"
-          echo "##vso[task.setvariable variable=CONTAINER]dev-container"
+          echo "##vso[task.setvariable variable=DEPLOY]dev-devops-microservice"
+          echo "##vso[task.setvariable variable=CONTAINER]dev-devops-microservice"
         fi
       displayName: 'Set IMAGE_TAG, DEPLOY, and CONTAINER based on branch'
 
