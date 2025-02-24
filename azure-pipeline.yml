@@ -54,7 +54,7 @@ jobs:
     - task: Docker@2
       inputs:
         command: push
-        repository: $(IMAGE_NAME)
+        repository:  $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
         tags: |
           $(IMAGE_TAG)
         containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
