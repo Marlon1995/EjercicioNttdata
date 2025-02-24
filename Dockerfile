@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Establecer la variable de entorno para el entorno (dev, qa, prod)
-ENV ENV=prod
+ENV ENV=dev
 
 # Exponer el puerto en el que Flask escucha
 EXPOSE 8080
