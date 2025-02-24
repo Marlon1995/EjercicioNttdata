@@ -1,206 +1,97 @@
 trigger:
-  branches:
-    include:
-      - master
-      - dev
-      - qa
+- master
+- qa
+- dev
 
-pr:
-  branches:
-    include:
-      - master
-      - dev
-      - qa
+pool:
+  vmImage: 'ubuntu-latest'
 
 variables:
-  version: $(Build.BuildId)  # Utiliza el ID del build para versionar la imagen Docker
-  environment: 'dev'  # Default environment
-  dockerImageName: 'devops-microservice'
-
+  IMAGE_NAME: 'devops-microservice'
+  CONTAINER: 'devops-microservice'
+  DEPLOY: 'devops-microservice'
+  NAMESPACE: 'devops-microservice'  # El namespace es el mismo para todos los entornos
+  AZURE_REGISTRY_URL: 'kfcregistry.azurecr.io'
+  
+  # Definir el tag dependiendo de la rama
+  IMAGE_TAG: $[counter(variables['Build.SourceBranchName'], 1)]
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}: IMAGE_TAG: 'latest'
+  ${{ if eq(variables['Build.SourceBranchName'], 'qa') }}: IMAGE_TAG: 'qa'
+  ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}: IMAGE_TAG: 'dev'
 
 stages:
-- stage: BuildandPushInitital
-  displayName: 'Build Docker Image'
-  jobs:
-    - job: Build
-      displayName: 'Build Docker Image'
-      pool:
-        vmImage: 'ubuntu-latest'  # Usa 'ubuntu-latest' para entornos Linux
-      steps:
-        - script: |
-            if [ ! -f "./build_and_push.sh" ]; then
-              echo "#!/bin/bash" > ./build_and_push.sh
-              echo "IMAGE_NAME=\"kfcregistry.azurecr.io/devops-microservice\"" >> ./build_and_push.sh
-              echo "TAG=\"latest\"" >> ./build_and_push.sh
-              echo "DOCKERFILE_PATH=\".\"" >> ./build_and_push.sh
-              echo "REGISTRY=\"kfcregistry.azurecr.io\"" >> ./build_and_push.sh
-              echo "az acr login --name \$REGISTRY" >> ./build_and_push.sh
-              echo "docker build -t \$IMAGE_NAME:\$TAG \$DOCKERFILE_PATH" >> ./build_and_push.sh
-              echo "docker push \$IMAGE_NAME:\$TAG" >> ./build_and_push.sh
-              chmod +x ./build_and_push.sh
-            fi
-            ./build_and_push.sh
-          displayName: 'Check and Create build_and_push.sh if it does not exist'
-          workingDirectory: $(Build.SourcesDirectory)
-
 - stage: Build
   displayName: 'Build Docker Image'
   jobs:
     - job: Build
       displayName: 'Build Docker Image'
-      pool:
-        vmImage: 'ubuntu-latest'
       steps:
         - task: Docker@2
           inputs:
-            command: 'buildAndPush'
-            repository: $(dockerImageName)
-            containerRegistry: '$(dockerRegistryServiceConnection)'
-            dockerfile: '$(Build.SourcesDirectory)/Dockerfile'
+            command: build
+            repository: $(IMAGE_NAME)
+            Dockerfile: 'Dockerfile'
             tags: |
-              $(version)
+              $(IMAGE_TAG)
+          displayName: 'Build Docker Image'
 
-- stage: Test
-  displayName: 'Run Tests'
-  dependsOn: Build
+- stage: Push
+  displayName: 'Push Docker Image to ACR'
   jobs:
-    - job: Test
-      displayName: 'Run Tests on Docker Container'
-      pool:
-        vmImage: 'ubuntu-latest'
+    - job: Push
+      displayName: 'Push Image to ACR'
       steps:
         - task: Docker@2
           inputs:
-            command: 'run'
-            containerRegistry: '$(dockerRegistryServiceConnection)'
-            imageName: $(dockerImageName):$(version)
-            options: '--rm'
-            runOptions: '-d'
+            command: push
+            repository: '$(IMAGE_NAME)'
+            tags: |
+              $(IMAGE_TAG)
+            containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+          displayName: 'Push image to ACR'
 
-- stage: DeployToDev
-  displayName: 'Deploy to Development Environment'
-  dependsOn: Test
-  condition: and(succeeded(), eq(variables['environment'], 'dev'))
+- stage: DeployToEnvironment
+  displayName: 'Deploy to Environment'
+  dependsOn: Push
   jobs:
-    - job: DeployDev
-      displayName: 'Deploy to Dev'
-      pool:
-        vmImage: 'ubuntu-latest'
+    - job: Deploy
+      displayName: 'Deploy to Environment'
       steps:
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'dev'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/namespace.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'dev'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/deployment.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'dev'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/service.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'dev'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/ingress.yaml'
+        - ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+            - task: Kubernetes@1
+              inputs:
+                connectionType: 'Kubernetes Service Connection'
+                kubernetesServiceEndpoint: 'aks-cluster-kfc'
+                namespace: $(NAMESPACE)
+                command: 'set'
+                arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
+                secretType: 'dockerRegistry'
+                containerRegistryType: 'Azure Container Registry'
+                containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+              displayName: 'Update Kubernetes Deployment (Prod)'
 
-- stage: DeployToQA
-  displayName: 'Deploy to QA Environment'
-  dependsOn: Test
-  condition: and(succeeded(), eq(variables['environment'], 'qa'))
-  jobs:
-    - job: DeployQA
-      displayName: 'Deploy to QA'
-      pool:
-        vmImage: 'ubuntu-latest'
-      steps:
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'qa'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/namespace.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'qa'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/deployment.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'qa'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/service.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'qa'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/ingress.yaml'
+        - ${{ if eq(variables['Build.SourceBranchName'], 'qa') }}:
+            - task: Kubernetes@1
+              inputs:
+                connectionType: 'Kubernetes Service Connection'
+                kubernetesServiceEndpoint: 'aks-cluster-kfc'
+                namespace: $(NAMESPACE)
+                command: 'set'
+                arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
+                secretType: 'dockerRegistry'
+                containerRegistryType: 'Azure Container Registry'
+                containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+              displayName: 'Update Kubernetes Deployment (QA)'
 
-- stage: DeployToProduction
-  displayName: 'Deploy to Production Environment'
-  dependsOn: Test
-  condition: and(succeeded(), eq(variables['environment'], 'production'))
-  jobs:
-    - job: DeployProd
-      displayName: 'Deploy to Production'
-      pool:
-        vmImage: 'ubuntu-latest'
-      steps:
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'production'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/namespace.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'production'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/deployment.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'production'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/service.yaml'
-        - task: Kubernetes@1
-          inputs:
-            connectionType: 'Azure Resource Manager'
-            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
-            namespace: 'production'
-            command: 'apply'
-            arguments: '-f $(Build.SourcesDirectory)/k8s/ingress.yaml'
-
-# Soporte para ejecuciones bajo demanda
-- stage: ManualDeploy
-  displayName: 'Manual Deployment Trigger'
-  jobs:
-    - job: ManualDeployJob
-      displayName: 'Manual Deployment Job'
-      steps:
-        - script: |
-            echo "Manual deployment triggered!"
-          displayName: 'Manual deployment step'
+        - ${{ if eq(variables['Build.SourceBranchName'], 'dev') }}:
+            - task: Kubernetes@1
+              inputs:
+                connectionType: 'Kubernetes Service Connection'
+                kubernetesServiceEndpoint: 'aks-cluster-kfc'
+                namespace: $(NAMESPACE)
+                command: 'set'
+                arguments: 'image deployment/$(DEPLOY) $(CONTAINER)=$(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)'
+                secretType: 'dockerRegistry'
+                containerRegistryType: 'Azure Container Registry'
+                containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+              displayName: 'Update Kubernetes Deployment (Dev)'

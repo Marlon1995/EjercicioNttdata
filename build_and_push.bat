@@ -1,21 +1,19 @@
 @echo off
+setlocal
 
-:: Variables
-set IMAGE_NAME=kfcregistry.azurecr.io/devops-microservice
-set TAG=latest
-set DOCKERFILE_PATH=.
-set REGISTRY=kfcregistry.azurecr.io
+set DEPLOYMENT_FILE=deployment.yaml
 
-:: Iniciar sesión en ACR
-echo Iniciando sesión en Azure Container Registry...
-az acr login --name %REGISTRY%
+:: Comando para aplicar el deployment
+echo Aplicando deployment...
+kubectl apply -f %DEPLOYMENT_FILE%
 
-:: Construir la imagen Docker
-echo Construyendo la imagen Docker...
-docker build -t %IMAGE_NAME%:%TAG% %DOCKERFILE_PATH%
+:: Verificar si el comando fue exitoso
+if %errorlevel% neq 0 (
+    echo Error al aplicar el deployment. Saliendo...
+    exit /b 1
+)
 
-:: Subir la imagen a ACR
-echo Subiendo la imagen a ACR...
-docker push %IMAGE_NAME%:%TAG%
 
-echo Imagen %IMAGE_NAME%:%TAG% subida correctamente.
+echo Despliegue completado correctamente.
+
+endlocal

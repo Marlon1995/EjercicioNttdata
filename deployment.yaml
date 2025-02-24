@@ -1,3 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-microservice
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,3 +37,37 @@ spec:
           requests:
             memory: "256Mi"
             cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-microservice
+  namespace: devops-microservice
+spec:
+  selector:
+    app: devops-microservice
+  ports:
+    - protocol: TCP
+      port: 80         # Puerto que estará expuesto en el clúster
+      targetPort: 8080  # Puerto al que se conecta el contenedor
+  type: LoadBalancer   # Esto se usa para exponer el servicio a través de un balanceador de carga
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: devops-microservice-ingress
+  namespace: devops-microservice
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: devops.example.com  # El dominio que usarás para acceder a tu aplicación
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: devops-microservice
+            port:
+              number: 80
