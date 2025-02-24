@@ -11,7 +11,7 @@ variables:
   AZURE_REGISTRY_URL: 'kfcregistry.azurecr.io'
   IMAGE_TAG: 'latest'  # Default value, se sobrescribirá en los pasos
   AZURE_REGISTRY_USERNAME: 'kfcregistry'
-  AZURE_REGISTRY_PASSWORD: '$(KeyAzure)'
+  AZURE_REGISTRY_PASSWORD: '$(KEYAZURE)'
 
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
     - task: Docker@2
       inputs:
         command: build
-        repository: $(IMAGE_NAME)
+        repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
         Dockerfile: 'Dockerfile'  # Asegúrate de que tu Dockerfile esté en la raíz del repositorio o ajusta la ruta
         tags: |
           $(IMAGE_TAG)
@@ -54,7 +54,7 @@ jobs:
     - task: Docker@2
       inputs:
         command: push
-        repository:  $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
+        repository: $(IMAGE_NAME)
         tags: |
           $(IMAGE_TAG)
         containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
