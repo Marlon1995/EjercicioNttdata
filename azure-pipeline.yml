@@ -9,7 +9,6 @@ pool:
 variables:
   IMAGE_NAME: 'devops-microservice'
   AZURE_REGISTRY_URL: 'kfcregistry.azurecr.io'
-  # Imagen Tag default (se configurará según la rama en los pasos)
   IMAGE_TAG: 'latest'  # Default value, se sobrescribirá en los pasos
 
 jobs:
@@ -34,17 +33,18 @@ jobs:
         fi
       displayName: 'Set IMAGE_TAG, DEPLOY, and CONTAINER based on branch'
 
-    # Paso para construir la imagen Docker
+    # Paso para construir la imagen Docker (especificando el directorio de trabajo)
     - task: Docker@2
       inputs:
         command: build
         repository: $(AZURE_REGISTRY_URL)/$(IMAGE_NAME)
-        Dockerfile: 'Dockerfile'
+        Dockerfile: 'Dockerfile'  # Asegúrate de que tu Dockerfile esté en la raíz del repositorio o ajusta la ruta
         tags: |
           $(IMAGE_TAG)
+        workingDirectory: $(Build.SourcesDirectory)  # Define el directorio de trabajo
       displayName: 'Build Docker Image'
 
-    # Paso para empujar la imagen a ACR
+    # Paso para empujar la imagen a ACR (especificando el directorio de trabajo si es necesario)
     - task: Docker@2
       inputs:
         command: push
@@ -52,6 +52,7 @@ jobs:
         tags: |
           $(IMAGE_TAG)
         containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+        workingDirectory: $(Build.SourcesDirectory)  # Define el directorio de trabajo
       displayName: 'Push image to ACR'
 
     # Paso para realizar el despliegue en función de la rama
