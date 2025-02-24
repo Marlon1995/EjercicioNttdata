@@ -1,5 +1,5 @@
 trigger:
-- master
+- qa
 
 pool:
   vmImage: ubuntu-latest
@@ -13,15 +13,15 @@ variables:
   - name: 'AZURE_REGISTRY_PASSWORD'
     value: '$(KeyAzure)'
   - name: 'IMAGE_NAME'
-    value: 'devops-microservice'
+    value: 'qa-devops-microservice'
   - name: 'IMAGE_TAG'
     value: '$(Build.BuildId)'  # Usar el ID de la compilación como tag
   - name: 'NAMESPACE'
-    value: 'devops-microservice'
+    value: 'qa-devops-microservice'
   - name: 'CONTAINER'
-    value: 'devops-microservice'
+    value: 'qa-devops-microservice'
   - name: 'DEPLOY'
-    value: 'devops-microservice'
+    value: 'qa-devops-microservice'
   - name: 'BUILD_ARG'
     value: 'prod.devops'
   - name: 'SERVICE_AKS'
