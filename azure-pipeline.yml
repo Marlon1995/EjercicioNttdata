@@ -1,0 +1,206 @@
+trigger:
+  branches:
+    include:
+      - master
+      - dev
+      - qa
+
+pr:
+  branches:
+    include:
+      - master
+      - dev
+      - qa
+
+variables:
+  version: $(Build.BuildId)  # Utiliza el ID del build para versionar la imagen Docker
+  environment: 'dev'  # Default environment
+  dockerImageName: 'devops-microservice'
+
+
+stages:
+- stage: BuildandPushInitital
+  displayName: 'Build Docker Image'
+  jobs:
+    - job: Build
+      displayName: 'Build Docker Image'
+      pool:
+        vmImage: 'ubuntu-latest'  # Usa 'ubuntu-latest' para entornos Linux
+      steps:
+        - script: |
+            if [ ! -f "./build_and_push.sh" ]; then
+              echo "#!/bin/bash" > ./build_and_push.sh
+              echo "IMAGE_NAME=\"kfcregistry.azurecr.io/devops-microservice\"" >> ./build_and_push.sh
+              echo "TAG=\"latest\"" >> ./build_and_push.sh
+              echo "DOCKERFILE_PATH=\".\"" >> ./build_and_push.sh
+              echo "REGISTRY=\"kfcregistry.azurecr.io\"" >> ./build_and_push.sh
+              echo "az acr login --name \$REGISTRY" >> ./build_and_push.sh
+              echo "docker build -t \$IMAGE_NAME:\$TAG \$DOCKERFILE_PATH" >> ./build_and_push.sh
+              echo "docker push \$IMAGE_NAME:\$TAG" >> ./build_and_push.sh
+              chmod +x ./build_and_push.sh
+            fi
+            ./build_and_push.sh
+          displayName: 'Check and Create build_and_push.sh if it does not exist'
+          workingDirectory: $(Build.SourcesDirectory)
+
+- stage: Build
+  displayName: 'Build Docker Image'
+  jobs:
+    - job: Build
+      displayName: 'Build Docker Image'
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: Docker@2
+          inputs:
+            command: 'buildAndPush'
+            repository: $(dockerImageName)
+            containerRegistry: '$(dockerRegistryServiceConnection)'
+            dockerfile: '$(Build.SourcesDirectory)/Dockerfile'
+            tags: |
+              $(version)
+
+- stage: Test
+  displayName: 'Run Tests'
+  dependsOn: Build
+  jobs:
+    - job: Test
+      displayName: 'Run Tests on Docker Container'
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: Docker@2
+          inputs:
+            command: 'run'
+            containerRegistry: '$(dockerRegistryServiceConnection)'
+            imageName: $(dockerImageName):$(version)
+            options: '--rm'
+            runOptions: '-d'
+
+- stage: DeployToDev
+  displayName: 'Deploy to Development Environment'
+  dependsOn: Test
+  condition: and(succeeded(), eq(variables['environment'], 'dev'))
+  jobs:
+    - job: DeployDev
+      displayName: 'Deploy to Dev'
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'dev'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/namespace.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'dev'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/deployment.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'dev'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/service.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'dev'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/ingress.yaml'
+
+- stage: DeployToQA
+  displayName: 'Deploy to QA Environment'
+  dependsOn: Test
+  condition: and(succeeded(), eq(variables['environment'], 'qa'))
+  jobs:
+    - job: DeployQA
+      displayName: 'Deploy to QA'
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'qa'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/namespace.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'qa'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/deployment.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'qa'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/service.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'qa'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/ingress.yaml'
+
+- stage: DeployToProduction
+  displayName: 'Deploy to Production Environment'
+  dependsOn: Test
+  condition: and(succeeded(), eq(variables['environment'], 'production'))
+  jobs:
+    - job: DeployProd
+      displayName: 'Deploy to Production'
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'production'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/namespace.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'production'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/deployment.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'production'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/service.yaml'
+        - task: Kubernetes@1
+          inputs:
+            connectionType: 'Azure Resource Manager'
+            kubernetesServiceEndpoint: '$(KubernetesServiceEndpoint)'
+            namespace: 'production'
+            command: 'apply'
+            arguments: '-f $(Build.SourcesDirectory)/k8s/ingress.yaml'
+
+# Soporte para ejecuciones bajo demanda
+- stage: ManualDeploy
+  displayName: 'Manual Deployment Trigger'
+  jobs:
+    - job: ManualDeployJob
+      displayName: 'Manual Deployment Job'
+      steps:
+        - script: |
+            echo "Manual deployment triggered!"
+          displayName: 'Manual deployment step'

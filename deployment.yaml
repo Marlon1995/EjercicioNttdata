@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-microservice
+  namespace: devops-microservice
+spec:
+  replicas: 2  # Número de réplicas de tu aplicación
+  selector:
+    matchLabels:
+      app: devops-microservice
+  template:
+    metadata:
+      labels:
+        app: devops-microservice
+    spec:
+      containers:
+      - name: devops-microservice
+        image: kfcregistry.azurecr.io/devops-microservice:latest  # Aquí pones la imagen que hayas creado
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: devops-config
+              key: environment
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "1"
+          requests:
+            memory: "256Mi"
+            cpu: "500m"

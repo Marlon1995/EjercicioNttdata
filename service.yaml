@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-microservice
+  namespace: devops-microservice
+spec:
+  selector:
+    app: devops-microservice
+  ports:
+    - protocol: TCP
+      port: 80         # Puerto que estará expuesto en el clúster
+      targetPort: 8080  # Puerto al que se conecta el contenedor
+  type: LoadBalancer   # Esto se usa para exponer el servicio a través de un balanceador de carga
