@@ -42,6 +42,12 @@ jobs:
         tags: |
           $(IMAGE_TAG)
       displayName: 'Build Docker Image'
+      
+    - task: Docker@2
+      inputs:
+        command: login
+        containerRegistry: 'SC_ACR_GRUPOKFC_DEV'
+      displayName: 'Login to Azure Container Registry'
 
     # Paso para empujar la imagen a ACR (especificando el directorio de trabajo si es necesario)
     - task: Docker@2
