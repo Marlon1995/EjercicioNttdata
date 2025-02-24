@@ -1,7 +1,5 @@
 trigger:
 - master
-- dev
-- qa
 
 pool:
   vmImage: ubuntu-latest
@@ -17,6 +15,8 @@ variables:
     value: '$(KeyAzure)'
   - name: 'IMAGE_NAME'
     value: 'devops-microservice'
+  - name: 'IMAGE_TAG'
+    value: '$(Build.BuildId)'  # Usar el ID de la compilación como tag
   - name: 'NAMESPACE'
     value: 'devops-microservice'
   - name: 'CONTAINER'
@@ -28,21 +28,24 @@ variables:
   - name: 'SERVICE_AKS'
     value: 'aks-cluster-kfc'
 
-# Determinar la etiqueta de la imagen en función de la rama
-  - name: 'IMAGE_TAG'
-    value: $[coalesce(variables['Build.SourceBranchName'], 'latest')]
-
-# Asignación de IMAGE_TAG específica según la rama
-  - name: 'IMAGE_TAG'
-    value: $[ 
-        eq(variables['Build.SourceBranchName'], 'master') 
-        ? 'latest' 
-        : variables['Build.SourceBranchName']
-    ]
-
 stages:
 
-# Etapa 1 - Build Docker Image
+# Etapa 1 - Análisis estático de código
+- stage: StaticCodeAnalysis
+  displayName: 'Static Code Analysis with Flake8'
+  jobs:
+    - job: StaticAnalysis
+      displayName: 'Run Static Code Analysis'
+      pool:
+        vmImage: ubuntu-latest
+      steps:
+        - script: |
+            echo "Running Flake8 for static code analysis..."
+            pip install flake8
+            flake8 . --max-line-length=120
+          displayName: 'Run Flake8 Analysis'
+
+# Etapa 2 - Build Docker Image
 - stage: BuildStage
   displayName: 'Build Docker Image'
   jobs:
@@ -63,7 +66,7 @@ stages:
               --build-arg argument=$(BUILD_ARG)
           displayName: 'Build Docker Image'
 
-# Etapa 2 - Login y Push de Docker
+# Etapa 3 - Login y Push de Docker
 - stage: PushStage
   displayName: 'Login and Push Docker Image'
   dependsOn: BuildStage
@@ -85,22 +88,22 @@ stages:
               $(IMAGE_TAG)
           displayName: 'Push image to ACR'
 
-# Etapa 3 - Ejecutar pruebas
+# Etapa 4 - Ejecutar pruebas unitarias
 - stage: TestStage
-  displayName: 'Run Tests'
+  displayName: 'Run Unit Tests'
   dependsOn: PushStage
   jobs:
     - job: RunTests
-      displayName: 'Run Tests'
+      displayName: 'Run Unit Tests'
       pool:
         vmImage: ubuntu-latest
       steps:
         - script: |
-            echo "Running tests on Docker image..."
-            docker run --rm $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) test-script.sh
-          displayName: 'Run Test Script'
+            echo "Running unit tests inside Docker container..."
+            docker run --rm $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) npm run test  # Asumiendo que las pruebas son con npm
+          displayName: 'Run Unit Tests'
 
-# Etapa 4 - Despliegue en AKS
+# Etapa 5 - Despliegue en AKS
 - stage: DeployStage
   displayName: 'Deploy to AKS'
   dependsOn: TestStage
