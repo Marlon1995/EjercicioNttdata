@@ -15,7 +15,7 @@ variables:
   - name: 'IMAGE_NAME'
     value: 'qa-devops-microservice'
   - name: 'IMAGE_TAG'
-    value: '$(Build.BuildId)'  # Usar el ID de la compilación como tag
+    value: '$(Build.BuildId)'  
   - name: 'NAMESPACE'
     value: 'qa-devops-microservice'
   - name: 'CONTAINER'
@@ -29,7 +29,7 @@ variables:
 
 stages:
 
-# Etapa 1 - Análisis estático de código
+#Análisis estático de código
 - stage: LintStage
   displayName: 'Run Linting (flake8)'
   jobs:
@@ -41,10 +41,10 @@ stages:
         - script: |
             echo "Running flake8 analysis..."
             pip install flake8
-            flake8 . || true  # La parte || true asegura que el paso no falle aunque haya errores
+            flake8 . || true  # Permitir que el paso continúe aunque haya errores
           displayName: 'Run flake8'
 
-# Etapa 2 - Build y Push Docker Image
+#Build y Push Docker Image
 - stage: BuildAndPushStage
   displayName: 'Build and Push Docker Image'
   jobs:
@@ -66,7 +66,7 @@ stages:
             docker push $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG)
           displayName: 'Push Docker Image to ACR'
 
-# Etapa 3 - Ejecutar pruebas unitarias
+# Ejecutar pruebas unitarias
 - stage: TestStage
   displayName: 'Run Unit Tests'
   dependsOn: BuildAndPushStage
@@ -78,13 +78,29 @@ stages:
       steps:
         - script: |
             echo "Running unit tests inside Docker container..."
-            docker run --rm $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) npm run test || true  # Permite que el pipeline continúe incluso si hay un error
+            docker run --rm $(AZURE_REGISTRY_URL)/$(IMAGE_NAME):$(IMAGE_TAG) npm run test || true
           displayName: 'Run Unit Tests'
 
-# Etapa 4 - Despliegue en AKS
+#Aprobación manual antes del despliegue
+- stage: ApprovalStage
+  displayName: 'Approval Before Deployment'
+  dependsOn: TestStage
+  jobs:
+    - job: WaitForApproval
+      displayName: 'Wait for Manual Approval'
+      pool: server
+      steps:
+        - task: ManualValidation@0
+          inputs:
+            notifyUsers: 'ejemplo@example.com,ejemplo2@example.com'  
+            instructions: 'Por favor, revisa los resultados de los tests y aprueba el despliegue si todo está correcto.'
+            onTimeout: 'reject'
+          displayName: 'Manual Approval'
+
+# Despliegue en AKS (solo si se aprueba la etapa anterior)
 - stage: DeployStage
   displayName: 'Deploy to AKS'
-  dependsOn: TestStage
+  dependsOn: ApprovalStage
   jobs:
     - job: DeployToAKS
       displayName: 'Deploy to AKS'
